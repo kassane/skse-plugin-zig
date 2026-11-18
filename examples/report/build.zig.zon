@@ -1,0 +1,16 @@
+.{
+    .name = .report,
+    .version = "0.0.0",
+    .fingerprint = 0xc42f778485a0e719,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .skse = .{
+            .path = "../../",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

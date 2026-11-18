@@ -1,4 +1,8 @@
 .zig-cache/
 zig-out/
 zig-pkg/
-*.o
+*.o*
+*.pdb
+*.exe
+*.lib
+*.dll
