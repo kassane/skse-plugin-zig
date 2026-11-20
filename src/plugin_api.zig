@@ -5,8 +5,8 @@
 //! (`T (*)(...)`) is an optional function pointer. C++ references in return
 //! position are ABI pointers, so they are spelled `*anyopaque`.
 //!
-//! Cross-checked against the header by `plugin_api_layout.cpp` (static_assert on
-//! size and every field offset) and by the tests at the bottom of this file.
+//! Cross-checked against the header by the tests at the bottom of this file,
+//! which assert every struct's size and every field offset.
 
 const std = @import("std");
 
@@ -23,18 +23,19 @@ pub const PluginInfo = extern struct {
     version: u32,
 };
 
-/// Interface ids accepted by `SKSEInterface.QueryInterface`.
-/// C spells these as an untyped `enum`, so they are `u32` constants here.
-pub const InterfaceId = struct {
-    pub const invalid: u32 = 0;
-    pub const scaleform: u32 = 1;
-    pub const papyrus: u32 = 2;
-    pub const serialization: u32 = 3;
-    pub const task: u32 = 4;
-    pub const messaging: u32 = 5;
-    pub const object: u32 = 6;
-    pub const trampoline: u32 = 7;
-    pub const max: u32 = 8;
+/// Interface ids accepted by `SKSEInterface.QueryInterface`. C declares these as
+/// an untyped `enum`, so they are an `enum(u32)`: the tag type keeps the header's
+/// values, and `@backingInt` is what crosses into the `u32` the C API takes.
+pub const InterfaceId = enum(u32) {
+    invalid = 0,
+    scaleform = 1,
+    papyrus = 2,
+    serialization = 3,
+    task = 4,
+    messaging = 5,
+    object = 6,
+    trampoline = 7,
+    max = 8,
 };
 
 /// `struct SKSEInterface`
@@ -47,6 +48,25 @@ pub const SKSEInterface = extern struct {
     GetPluginHandle: ?*const fn () callconv(.c) PluginHandle,
     GetReleaseIndex: ?*const fn () callconv(.c) u32,
     GetPluginInfo: ?*const fn (name: [*:0]const u8) callconv(.c) ?*const PluginInfo,
+};
+
+/// `struct SKSEScaleformInterface`. The callback parameters are C++ objects the
+/// port has no layout for, so they stay `*anyopaque` like every other opaque
+/// pointer here.
+pub const SKSEScaleformInterface = extern struct {
+    pub const kInterfaceVersion: u32 = 2;
+    /// `typedef bool (* RegisterCallback)(GFxMovieView * view, GFxValue * root);`
+    pub const RegisterCallback = ?*const fn (view: *anyopaque, root: *anyopaque) callconv(.c) bool;
+    /// `typedef void (* RegisterInventoryCallback)(GFxMovieView * view, GFxValue * object, InventoryEntryData * item);`
+    pub const RegisterInventoryCallback = ?*const fn (
+        view: *anyopaque,
+        object: *anyopaque,
+        item: *anyopaque,
+    ) callconv(.c) void;
+
+    interfaceVersion: u32,
+    Register: ?*const fn (name: [*:0]const u8, callback: RegisterCallback) callconv(.c) bool,
+    RegisterForInventory: ?*const fn (callback: RegisterInventoryCallback) callconv(.c) void,
 };
 
 /// `struct SKSESerializationInterface`
@@ -104,25 +124,25 @@ pub const SKSEMessagingInterface = extern struct {
     pub const EventCallback = ?*const fn (msg: *Message) callconv(.c) void;
 
     /// SKSE messages, matching the header's `kMessage_*` enum in order.
-    pub const MessageId = struct {
-        pub const PostLoad: u32 = 0;
-        pub const PostPostLoad: u32 = 1;
-        pub const PreLoadGame: u32 = 2;
-        pub const PostLoadGame: u32 = 3;
-        pub const SaveGame: u32 = 4;
-        pub const DeleteGame: u32 = 5;
-        pub const InputLoaded: u32 = 6;
-        pub const NewGame: u32 = 7;
-        pub const DataLoaded: u32 = 8;
+    pub const MessageId = enum(u32) {
+        PostLoad = 0,
+        PostPostLoad = 1,
+        PreLoadGame = 2,
+        PostLoadGame = 3,
+        SaveGame = 4,
+        DeleteGame = 5,
+        InputLoaded = 6,
+        NewGame = 7,
+        DataLoaded = 8,
     };
 
     /// `kDispatcher_*` ids for `GetEventDispatcher`.
-    pub const DispatcherId = struct {
-        pub const ModEvent: u32 = 0;
-        pub const CameraEvent: u32 = 1;
-        pub const CrosshairEvent: u32 = 2;
-        pub const ActionEvent: u32 = 3;
-        pub const NiNodeUpdateEvent: u32 = 4;
+    pub const DispatcherId = enum(u32) {
+        ModEvent = 0,
+        CameraEvent = 1,
+        CrosshairEvent = 2,
+        ActionEvent = 3,
+        NiNodeUpdateEvent = 4,
     };
 
     interfaceVersion: u32,
@@ -164,16 +184,19 @@ pub const SKSETrampolineInterface = extern struct {
 pub const PluginVersionData = extern struct {
     pub const kVersion: u32 = 1;
 
-    /// `kVersionIndependent_*`
-    pub const Independence = struct {
-        pub const address_library_post_ae: u32 = 1 << 0;
-        pub const signatures: u32 = 1 << 1;
-        pub const structs_post_629: u32 = 1 << 2;
+    /// `kVersionIndependent_*`. C ORs these flags into one field value, so the
+    /// enum is non-exhaustive (`_`): a combination is legal, not just a tag.
+    pub const Independence = enum(u32) {
+        address_library_post_ae = 1 << 0,
+        signatures = 1 << 1,
+        structs_post_629 = 1 << 2,
+        _,
     };
-    /// `kVersionIndependentEx_*`
-    pub const IndependenceEx = struct {
-        pub const no_struct_use: u32 = 1 << 0;
-        pub const address_library_v5: u32 = 1 << 1;
+    /// `kVersionIndependentEx_*`, non-exhaustive for the same reason.
+    pub const IndependenceEx = enum(u32) {
+        no_struct_use = 1 << 0,
+        address_library_v5 = 1 << 1,
+        _,
     };
 
     dataVersion: u32,
@@ -297,6 +320,7 @@ test "C++ layout cross-check (generated from plugin_api_layout.cpp)" {
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(SKSEMessagingInterface.Message));
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(SKSEObjectInterface));
     try std.testing.expectEqual(@as(usize, 16), @sizeOf(SKSEPapyrusInterface));
+    try std.testing.expectEqual(@as(usize, 24), @sizeOf(SKSEScaleformInterface));
     try std.testing.expectEqual(@as(usize, 848), @sizeOf(PluginVersionData));
     try std.testing.expectEqual(@as(usize, 104), @sizeOf(SKSESerializationInterface));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(SKSETaskInterface));
@@ -326,6 +350,9 @@ test "C++ layout cross-check (generated from plugin_api_layout.cpp)" {
     try std.testing.expectEqual(@as(usize, 0), @offsetOf(SKSEObjectInterface, "interfaceVersion"));
     try std.testing.expectEqual(@as(usize, 8), @offsetOf(SKSEPapyrusInterface, "Register"));
     try std.testing.expectEqual(@as(usize, 0), @offsetOf(SKSEPapyrusInterface, "interfaceVersion"));
+    try std.testing.expectEqual(@as(usize, 8), @offsetOf(SKSEScaleformInterface, "Register"));
+    try std.testing.expectEqual(@as(usize, 0), @offsetOf(SKSEScaleformInterface, "interfaceVersion"));
+    try std.testing.expectEqual(@as(usize, 16), @offsetOf(SKSEScaleformInterface, "RegisterForInventory"));
     try std.testing.expectEqual(@as(usize, 264), @offsetOf(PluginVersionData, "author"));
     try std.testing.expectEqual(@as(usize, 780), @offsetOf(PluginVersionData, "compatibleVersions"));
     try std.testing.expectEqual(@as(usize, 0), @offsetOf(PluginVersionData, "dataVersion"));
@@ -358,7 +385,31 @@ test "C++ layout cross-check (generated from plugin_api_layout.cpp)" {
     try std.testing.expectEqual(@as(u32, 0x01070680), RUNTIME_VERSION_1_7_104);
     try std.testing.expectEqual(@as(u32, 75), SKSE_VERSION_RELEASEIDX);
     try std.testing.expectEqual(@as(u32, 4294967295), kPluginHandle_Invalid);
-    try std.testing.expectEqual(@as(u32, 8), InterfaceId.max);
+}
+
+test "C enums keep the header's values" {
+    // The enums carry no implicit coercion to u32, so every crossing into the
+    // C API goes through @backingInt; these pin the numbers that crossing.
+    try std.testing.expectEqual(@as(u32, 0), @backingInt(InterfaceId.invalid));
+    try std.testing.expectEqual(@as(u32, 2), @backingInt(InterfaceId.papyrus));
+    try std.testing.expectEqual(@as(u32, 8), @backingInt(InterfaceId.max));
+
+    const Id = SKSEMessagingInterface.MessageId;
+    try std.testing.expectEqual(@as(u32, 0), @backingInt(Id.PostLoad));
+    try std.testing.expectEqual(@as(u32, 8), @backingInt(Id.DataLoaded));
+
+    const Disp = SKSEMessagingInterface.DispatcherId;
+    try std.testing.expectEqual(@as(u32, 0), @backingInt(Disp.ModEvent));
+    try std.testing.expectEqual(@as(u32, 4), @backingInt(Disp.NiNodeUpdateEvent));
+
+    // Flag enums are non-exhaustive, so a combination round-trips too.
+    const flags: u32 = @backingInt(PluginVersionData.Independence.signatures) |
+        @backingInt(PluginVersionData.Independence.structs_post_629);
+    try std.testing.expectEqual(@as(u32, 0b110), flags);
+    try std.testing.expectEqual(
+        PluginVersionData.Independence.signatures,
+        @as(PluginVersionData.Independence, @fromBackingInt(@intCast(flags & 0b010))),
+    );
 }
 
 test "versionData fills the fixed buffers" {
