@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const mod = dep.module("zig_skseplugin");
+    const mod = dep.module("skseplugin_zig");
 
     const lib = b.addLibrary(.{
         .name = "sksePlugin",
