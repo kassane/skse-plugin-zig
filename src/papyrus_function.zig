@@ -7,7 +7,7 @@
 
 const std = @import("std");
 const game = @import("game.zig");
-const value = @import("papyrus_value.zig");
+pub const value = @import("papyrus_value.zig");
 pub const vm = @import("papyrus_vm.zig");
 
 /// SKSE's `PapyrusNativeFunctionDef` refuses to build a native with more
@@ -39,9 +39,11 @@ pub const Signature = struct {
     ret: value.Type = .none,
 };
 
-/// One native implementation. `args` covers exactly the declared parameters and
-/// `result` arrives as `none`, ready to be written.
-pub const Callback = *const fn (args: []const value.VMValue, result: *value.VMValue) callconv(.c) void;
+/// One native implementation. The first `count` cells of `args` are the
+/// declared parameters and `result` arrives as `none`, ready to be written.
+/// A slice cannot cross the win64 ABI, so the parameters travel as a pointer
+/// and a count.
+pub const Callback = *const fn (args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void;
 
 /// `StringCache::Ref`, eight bytes the constructor fills in for us.
 const Handle = extern struct {
@@ -78,7 +80,7 @@ const Object = extern struct {
     _pad43: u8,
     user_flags: u32,
     doc: Handle,
-    callback: ?*anyopaque,
+    callback: ?*const anyopaque,
 };
 
 /// The 23 game slots with the two pure ones replaced. All natives built here
@@ -105,7 +107,7 @@ fn slots() *[slot_count]vm.Slot {
 /// choice.
 fn heapAllocate(size: usize) ?*anyopaque {
     const heap: *anyopaque = @ptrFromInt(game.base() + heap_global_rva);
-    return game.fnAt(heap_rva, HeapAllocateFn).*(heap, size, 0, 0);
+    return game.fnAt(heap_rva, HeapAllocateFn)(heap, size, 0, 0);
 }
 
 /// `NativeFunctionBase::HasCallback`: whether the object carries something for
@@ -144,7 +146,7 @@ fn run(
         cells[i] = if (argument) |cell| cell.* else .{};
     }
 
-    callback(cells[0..count], result);
+    callback(&cells, count, result);
     return true;
 }
 
@@ -156,7 +158,7 @@ pub fn register(registry: *vm.Registry, signature: Signature, callback: Callback
     const raw = heapAllocate(@sizeOf(Object)) orelse return error.OutOfMemory;
     const object: *Object = @ptrCast(@alignCast(raw));
 
-    game.fnAt(ctor_rva, CtorFn).*(object, signature.name, signature.class, 1, @intCast(signature.params.len));
+    game.fnAt(ctor_rva, CtorFn)(object, signature.name, signature.class, 1, @intCast(signature.params.len));
 
     object.ret_type = @backingInt(signature.ret);
     // The game's parameter table ctor (RVA 0x014DCFF0) skips the allocation
@@ -169,7 +171,7 @@ pub fn register(registry: *vm.Registry, signature: Signature, callback: Callback
         }
     }
 
-    const boxed: *anyopaque = @ptrCast(callback);
+    const boxed: *const anyopaque = @ptrCast(callback);
     object.callback = boxed;
     object.vptr = slots();
 
