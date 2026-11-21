@@ -8,14 +8,13 @@ Bool Function IsEven(Int n) Global Native
 
 ; Select a reference in the console, then "APS ZigExampleCaller Run".
 ; OnInit runs when the instance is created; Run also exists so APS's
-; optional second argument has a target. Console output goes through
-; ConsoleUtil Extended, because vanilla Papyrus cannot print to the console.
+; optional second argument has a target. Each native logs its own result
+; to the plugin log and the console, so Run only makes the calls.
 Function Run()
     Int total = Sum(2, 3)
     Int calls = Tick()
     Float scaled = Scale(1.5, 2.0)
     Bool even = IsEven(total)
-    ConsoleUtil.PrintConsole("zig: sum=" + total + " tick=" + calls + " scale=" + scaled + " even=" + even)
 EndFunction
 
 Event OnInit()

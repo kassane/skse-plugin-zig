@@ -10,6 +10,14 @@ const value = papyrus.value;
 pub const std_options: std.Options = .{ .log_level = .info, .logFn = skse.logFn };
 
 const log = skse.log;
+const console = skse.console;
+
+/// A native's result goes to both sinks: the plugin log for history, the
+/// `~` console for the line to actually be seen.
+fn emit(comptime fmt: []const u8, args: anytype) void {
+    log(fmt, args);
+    console.print(fmt, args);
+}
 
 const plugin_name: [:0]const u8 = "skse-plugin-zig-papyrus";
 const plugin_version_number: u32 = 0x01000000;
@@ -30,7 +38,7 @@ fn sum(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callcon
     _ = count;
     const total = args[0].data.int + args[1].data.int;
     result.setInt(total);
-    log("Sum({d}, {d}) = {d}\n", .{ args[0].data.int, args[1].data.int, total });
+    emit("Sum({d}, {d}) = {d}\n", .{ args[0].data.int, args[1].data.int, total });
 }
 
 // No parameters at all, which is the shape the game's parameter table ctor
@@ -42,21 +50,21 @@ fn tick(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callco
     _ = count;
     ticks += 1;
     result.setInt(@bitCast(ticks));
-    log("Tick() = {d}\n", .{ticks});
+    emit("Tick() = {d}\n", .{ticks});
 }
 
 fn scale(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
     _ = count;
     const scaled = args[0].data.float * args[1].data.float;
     result.setFloat(scaled);
-    log("Scale({d}, {d}) = {d}\n", .{ args[0].data.float, args[1].data.float, scaled });
+    emit("Scale({d}, {d}) = {d}\n", .{ args[0].data.float, args[1].data.float, scaled });
 }
 
 fn isEven(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
     _ = count;
     const even = @rem(args[0].data.int, 2) == 0;
     result.setBool(even);
-    log("IsEven({d}) = {s}\n", .{ args[0].data.int, if (even) "true" else "false" });
+    emit("IsEven({d}) = {s}\n", .{ args[0].data.int, if (even) "true" else "false" });
 }
 
 /// `bool RegisterFunctions(VMClassRegistry * registry)`, the callback SKSE calls

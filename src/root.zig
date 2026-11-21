@@ -5,6 +5,7 @@ const w = std.os.windows;
 
 pub const plugin_api = @import("plugin_api.zig");
 pub const game = @import("game.zig");
+pub const console = @import("console.zig");
 pub const papyrus = @import("papyrus_function.zig");
 
 // SKSE LoadLibrary's the DLL and there is no console behind it, so an example
