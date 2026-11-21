@@ -1,0 +1,17 @@
+.{
+    .name = .papyrus,
+    .version = "0.0.0",
+    .fingerprint = 0x9178cd78f9b17c18,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .skse = .{
+            .path = "../../",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "scripts",
+    },
+}
