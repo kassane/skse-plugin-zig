@@ -12,49 +12,32 @@ padding follow the Windows x64 ABI.
 
 Built here with Zig `0.17.0` or master.
 
-## What actually changed between SKSE versions
+### How to use
 
-The port came from SKSE 2.3.1, which targets runtime 1.7.104. Two older header
-sets were checked against it: SKSE 2.0.20 for runtime 1.5.97, and 2.2.6-gog for
-runtime 1.6.1179 GOG.
+Make project folder and open
+```powershell
+# inside project path
+zig init -m
+```
+Add skse module in your `build.zig.zon`
+```bash
+zig fetch --save=skse git+https://github.com/kassane/skse-plugin-zig
+```
+Also, add `b.dependency("...")` in your `build.zig`, see [examples](./examples/).
 
-All eight ported structs are byte identical across the three. Between the
-2.0.20 and 2.3.1 headers 127 lines differ, but only one removed line is code
-and only 27 added lines are:
-
-- `PluginAPI.h` drops `typedef bool(*_SKSEPlugin_Query)(...)`. The 2.0.20
-  loader needs that export and skips the plugin without it:
-  `if (plugin.query && plugin.load)`. The 2.2.6 and 2.3.1 loaders never look
-  for it.
-- `PluginAPI.h` gains `SKSEPluginVersionData`, the struct behind the
-  `SKSEPlugin_Version` export. The 2.3.1 loader reads it out of the PE resource
-  section before running any plugin code.
-
-A plugin aiming at all three runtimes exports `SKSEPlugin_Query`,
-`SKSEPlugin_Version` and `SKSEPlugin_Load`.
-
-## The installed plugin
-
-`examples/report` builds `skse-plugin-zig-report.dll`, installed to
-`Mods/skse-plugin-zig/SKSE/Plugins/`. On load it records the SKSE and runtime
-versions, asks `QueryInterface` for all seven interfaces, registers a listener
-on `"SKSE"`, and appends every message with a timestamp. On `PostLoad` it runs
-`GetPluginInfo` over a list of plugin names, so the report shows which of them
-SKSE actually reports.
-
-The report is written beside the DLL, which under MO2 means
-`Mods/skse-plugin-zig/SKSE/Plugins/` or `overwrite/SKSE/Plugins/` depending on
-where the VFS sends the write, and falls back to the game folder if that open
-fails. stderr is not an option: once SKSE has loaded the DLL there is no
-console behind it, so `std.log` is redirected through `std_options.logFn`.
+> [!IMPORTANT]
+> If need MSVC files (`libraries`/`includes`), check [xwin](https://github.com/Jake-Shadle/xwin/releases/latest) or [msvcup](https://github.com/marler8997/msvcup/releases/latest) to add in your `build.zig` like template-project [xwin-zig-test](https://github.com/kassane/xwin-zig-test).
 
 ## Build
 
 ```bash
 zig build test                        # module tests
-cd examples/basic && zig build        # zig-out/bin/sksePlugin.dll
+cd examples/basic && zig build        # zig-out/bin/skse-plugin-basic.dll
 cd examples/report && zig build -Doptimize=ReleaseFast
+cd examples/papyrus && zig build -Doptimize=ReleaseFast
 ```
+
+More info, check [examples/README.md](./examples/README.md)
 
 ## License
 

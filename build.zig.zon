@@ -1,6 +1,6 @@
 .{
     .name = .skseplugin_zig,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0x9e7fb8b42e8e2e52,
     .minimum_zig_version = "0.17.0",
     .paths = .{

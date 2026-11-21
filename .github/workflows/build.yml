@@ -24,4 +24,5 @@ jobs:
         working-directory: examples
         run: |
           zig build --build-file $PWD/basic/build.zig --summary all -freference-trace
+          zig build --build-file $PWD/papyrus/build.zig --summary all -freference-trace
           zig build --build-file $PWD/report/build.zig --summary all -freference-trace

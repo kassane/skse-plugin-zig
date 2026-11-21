@@ -28,7 +28,6 @@ pub fn build(b: *std.Build) void {
             },
         }),
         .linkage = .dynamic,
-        .version = @import("skse").version,
     });
 
     b.installArtifact(lib);
