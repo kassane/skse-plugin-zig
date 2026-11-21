@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     const mod = dep.module("skseplugin_zig");
 
     const lib = b.addLibrary(.{
-        .name = "sksePlugin",
+        .name = "skse-plugin-zig-report",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/lib.zig"),
             .target = target,

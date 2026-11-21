@@ -151,4 +151,7 @@ pub fn logFn(comptime message_level: std.log.Level, comptime scope: @EnumLiteral
 // `zig build test` reports 1/1 instead of 4/4.
 test {
     std.testing.refAllDecls(@This());
+    _ = plugin_api;
+    _ = game;
+    _ = papyrus;
 }
