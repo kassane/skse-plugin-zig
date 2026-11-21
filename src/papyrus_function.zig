@@ -1,17 +1,13 @@
-//! One Papyrus native, assembled the way the game assembles its own.
-//!
-//! The game's `NativeFunction` constructor does the awkward work: it owns the
-//! name handles, lays out the parameter description table and installs a
-//! vtable. That vtable leaves `HasCallback` and `Run` pure, so this package
-//! copies it and replaces exactly those two slots.
+//! One Papyrus native, built by the game's `NativeFunction` constructor. Its
+//! vtable leaves `HasCallback` and `Run` pure; this package copies the table and
+//! replaces those two slots.
 
 const std = @import("std");
 const game = @import("game.zig");
 pub const value = @import("papyrus_value.zig");
 pub const vm = @import("papyrus_vm.zig");
 
-/// SKSE's `PapyrusNativeFunctionDef` refuses to build a native with more
-/// parameters than this.
+/// SKSE's `PapyrusNativeFunctionDef` parameter cap.
 pub const max_params = 10;
 
 const slot_count = 23;
@@ -29,9 +25,9 @@ const HeapAllocateFn = *const fn (*anyopaque, usize, usize, u8) callconv(.c) ?*a
 /// `NativeFunction::NativeFunction(fnName, className, isStatic, numParams)`.
 const CtorFn = *const fn (*Object, [*:0]const u8, [*:0]const u8, u8, u32) callconv(.c) void;
 
-/// What the VM has to know about a native before a call can reach it.
+/// A native's declaration.
 pub const Signature = struct {
-    /// The script the function belongs to, as `ScriptName` spells it.
+    /// Owning script, as `ScriptName` spells it.
     class: [*:0]const u8,
     name: [*:0]const u8,
     /// One id per parameter, in script order.
@@ -39,18 +35,17 @@ pub const Signature = struct {
     ret: value.Type = .none,
 };
 
-/// One native implementation. The first `count` cells of `args` are the
-/// declared parameters and `result` arrives as `none`, ready to be written.
-/// A slice cannot cross the win64 ABI, so the parameters travel as a pointer
-/// and a count.
-pub const Callback = *const fn (args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void;
+/// One native. `args[0..count]` are the parameters (pointer + count, not a
+/// slice, for the win64 ABI); `result` arrives as `none`. `machine` is the
+/// running VM, needed for `createArray`.
+pub const Callback = *const fn (args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void;
 
-/// `StringCache::Ref`, eight bytes the constructor fills in for us.
+/// `StringCache::Ref`, filled by the constructor.
 const Handle = extern struct {
     ref: ?*anyopaque,
 };
 
-/// One `VDescTable` entry: the name the VM reports and the type it checks.
+/// One `VDescTable` entry: name + type.
 const ParamDesc = extern struct {
     name: Handle,
     type: u64,
@@ -63,8 +58,7 @@ const DescTable = extern struct {
     _pad: [4]u8,
 };
 
-/// `BSScript::NativeFunction`, `0x58` bytes of the 1.7.104 layout. Every offset
-/// below is one the constructor writes; the test at the bottom pins them.
+/// `BSScript::NativeFunction`, 0x58 bytes (1.7.104). Offsets pinned by the test below.
 const Object = extern struct {
     vptr: [*]vm.Slot,
     ref_count: u32,
@@ -83,10 +77,8 @@ const Object = extern struct {
     callback: ?*const anyopaque,
 };
 
-/// The 23 game slots with the two pure ones replaced. All natives built here
-/// share it: only those two entries ever differ, and the installed table lives
-/// in read-only `.rdata`. Built on first use, which happens on the game thread
-/// inside the VM callback, so the lazy flag needs no synchronization.
+/// The 23 game slots with the two pure ones replaced, shared by all natives.
+/// Built on first use, on the game thread, so the lazy flag needs no lock.
 var native_slots: [slot_count]vm.Slot = undefined;
 var native_slots_built = false;
 
@@ -101,38 +93,29 @@ fn slots() *[slot_count]vm.Slot {
     return &native_slots;
 }
 
-/// `Heap::Allocate(size, alignment, aligned)` with `g_mainHeap` as its `this`,
-/// the allocator `NativeFunction` declares through `DEFINE_STATIC_HEAP`. The
-/// game frees the object from the same heap, so this is not an interchangeable
-/// choice.
+/// `Heap::Allocate` on `g_mainHeap` -- the heap the game frees the object from.
 fn heapAllocate(size: usize) ?*anyopaque {
     const heap: *anyopaque = @ptrFromInt(game.base() + heap_global_rva);
     return game.fnAt(heap_rva, HeapAllocateFn)(heap, size, 0, 0);
 }
 
-/// `NativeFunctionBase::HasCallback`: whether the object carries something for
-/// `Run` to call. `Impl_Invoke` asks before every call, so leaving the slot pure
-/// would fault on the first native.
+/// `HasCallback`: `Impl_Invoke` asks before every call; a pure slot would fault.
 fn hasCallback(this: *Object) callconv(.c) bool {
     return this.callback != null;
 }
 
-/// `NativeFunctionDef::Run`. The VM calls it with the receiver cell, the
-/// registry, the stack id, the result cell and the frame, and expects false
-/// only when the call could not be made.
+/// `Run`: (receiver, VM, stack id, result, frame). False only if the call failed.
 fn run(
     this: *Object,
     base: *value.VMValue,
-    registry: *vm.Registry,
+    machine: *vm.VirtualMachine,
     stack_id: u32,
     result: *value.VMValue,
     state: *vm.VMState,
 ) callconv(.c) bool {
-    // A `Global Native` function carries a `StaticFunctionTag` instead of an
-    // instance, so there is no receiver to unpack. `registry` and `stack_id`
-    // belong to the long callback signature, which this package does not build.
+    // Global natives carry a StaticFunctionTag, not a receiver; stack_id is
+    // for the long callback signature this package does not build.
     _ = base;
-    _ = registry;
     _ = stack_id;
 
     const callback: Callback = @ptrCast(this.callback orelse return true);
@@ -146,13 +129,12 @@ fn run(
         cells[i] = if (argument) |cell| cell.* else .{};
     }
 
-    callback(&cells, count, result);
+    callback(&cells, count, machine, result);
     return true;
 }
 
-/// Build one native and hand it over. Only `Global Native` functions are built:
-/// the constructor is always told the function is static.
-pub fn register(registry: *vm.Registry, signature: Signature, callback: Callback) !void {
+/// Build and bind one `Global Native` (the constructor is told it is static).
+pub fn register(machine: *vm.VirtualMachine, signature: Signature, callback: Callback) !void {
     if (signature.params.len > max_params) return error.TooManyParams;
 
     const raw = heapAllocate(@sizeOf(Object)) orelse return error.OutOfMemory;
@@ -161,9 +143,8 @@ pub fn register(registry: *vm.Registry, signature: Signature, callback: Callback
     game.fnAt(ctor_rva, CtorFn)(object, signature.name, signature.class, 1, @intCast(signature.params.len));
 
     object.ret_type = @backingInt(signature.ret);
-    // The game's parameter table ctor (RVA 0x014DCFF0) skips the allocation
-    // entirely when there is nothing to hold, so a zero-parameter native has a
-    // null table and nothing to patch.
+    // The parameter table ctor (RVA 0x014DCFF0) allocates nothing for zero
+    // parameters, so the table is null and there is nothing to patch.
     if (signature.params.len > 0) {
         const parameters = object.params.data orelse return error.NoParamTable;
         for (signature.params, 0..) |type_id, index| {
@@ -175,7 +156,7 @@ pub fn register(registry: *vm.Registry, signature: Signature, callback: Callback
     object.callback = boxed;
     object.vptr = slots();
 
-    registry.registerFunction(object);
+    machine.bindNativeMethod(object);
 }
 
 test "the object matches what the 1.7.104 constructor writes" {

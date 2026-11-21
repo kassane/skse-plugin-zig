@@ -1,7 +1,7 @@
 # skse-plugin-zig (nolibc by default)
 
-Zig bindings for the SKSE64 plugin API, with an example that builds a DLL the
-game loader will accept.
+Zig bindings for the SKSE64 plugin API, with examples that build DLLs the game
+loader accepts.
 
 SKSE hands a plugin a small set of C structs: a version block, then function
 pointers for messaging, tasks, Papyrus, serialization and trampolines. This

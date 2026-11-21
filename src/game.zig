@@ -9,16 +9,13 @@ const w = std.os.windows;
 
 extern "kernel32" fn GetModuleHandleW(lp_module_name: ?[*:0]const u16) callconv(.winapi) ?w.HMODULE;
 
-/// Base of the executable. A null name asks for the image that started the
-/// process, which cannot go away while the process runs.
+/// Executable base (null name = the process image).
 pub fn base() usize {
     return @intFromPtr(GetModuleHandleW(null) orelse unreachable);
 }
 
-/// A game function as a callable address. `F` names the shape, so the call
-/// site reads as the header's declaration. Call the returned pointer directly;
-/// loading it with `.*` is rejected in Zig 0.18, where `fn` values are
-/// comptime-only.
+/// A game function as a callable address; call it directly (`.*` is
+/// comptime-only in 0.18). `F` is the header's declaration.
 ///
 ///     game.fnAt(0x0149E7F0, *const fn (*VMArgList, *VMState) callconv(.c) u32)
 pub fn fnAt(comptime rva: usize, comptime F: type) F {

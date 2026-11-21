@@ -261,6 +261,11 @@ pub const VersionDataOptions = struct {
 /// Export a function of this shape as `SKSEPlugin_Load`.
 pub const PluginLoad = ?*const fn (skse: *const SKSEInterface) callconv(.c) bool;
 
+/// Export as `SKSEPlugin_Preload`. SKSE 2.2.7+ (AE) calls it before any Load,
+/// before Skyrim reads plugin data; the interface offers only the trampoline
+/// (id 7). A failing Preload refuses the plugin. Older loaders ignore it.
+pub const PluginPreload = ?*const fn (skse: *const SKSEInterface) callconv(.c) bool;
+
 // ---- version helpers, ported from skse64_common/skse_version.h ----
 
 /// `MAKE_EXE_VERSION_EX(major, minor, build, sub)`

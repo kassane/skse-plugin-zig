@@ -5,6 +5,7 @@ Int Function Sum(Int a, Int b) Global Native
 Int Function Tick() Global Native
 Float Function Scale(Float v, Float k) Global Native
 Bool Function IsEven(Int n) Global Native
+Int[] Function Range(Int n) Global Native
 
 ; Select a reference in the console, then "APS ZigExampleCaller Run".
 ; OnInit runs when the instance is created; Run also exists so APS's
@@ -15,6 +16,10 @@ Function Run()
     Int calls = Tick()
     Float scaled = Scale(1.5, 2.0)
     Bool even = IsEven(total)
+    Int[] nums = Range(4)
+    Int first = nums[0]
+    Int last = nums[3]
+    Debug.Trace("Range read back: " + first + " .. " + last)
 EndFunction
 
 Event OnInit()

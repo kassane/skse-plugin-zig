@@ -1,52 +1,56 @@
-//! The VM side of one native call: reading the arguments the frame carries and
-//! handing a finished function to the registry.
-//!
-//! Everything here resolves at run time from RVAs in the 1.7.104 image.
+//! The VM side of a native call: frame arguments, arrays, registration.
+//! RVAs are the 1.7.104 image's.
 
 const game = @import("game.zig");
 const value = @import("papyrus_value.zig");
 
-/// One entry of a C++ vtable. `IFunction` and `VMClassRegistry` are objects
-/// whose first word points at an array of these, which is what makes them
-/// reachable from Zig without a C++ compiler.
+/// One C++ vtable entry; an object's first word points at an array of these.
 pub const Slot = *const anyopaque;
 
 /// `BSScript::VMArgList`, touched only through its two game functions.
 pub const VMArgList = opaque {};
 
-/// The running frame. Only its first word at `0x00` is read here; the rest of
-/// the object belongs to the VM and nothing in this package looks past it.
+/// The running frame; only its first word (`arg_list`) is read.
 pub const VMState = extern struct {
     arg_list: *VMArgList,
 };
 
-/// `BSScript::VMClassRegistry`, the object SKSE hands a Papyrus plugin callback.
-pub const Registry = extern struct {
+/// `BSScript::Internal::VirtualMachine`, the object SKSE hands a Papyrus callback.
+pub const VirtualMachine = extern struct {
     vptr: [*]Slot,
 
-    /// `VMClassRegistry::RegisterFunction(IFunction*)`, slot `0x18`. The game's own
-    /// registration loop reaches it as `call [rax+0xc0]` and ignores any result,
-    /// because the slot returns nothing.
-    const register_function_slot = 24;
+    /// `BindNativeMethod`, slot 24 (`call [rax+0xc0]` in the game's loop); returns nothing.
+    const bind_native_method_slot = 24;
 
-    pub fn registerFunction(self: *Registry, function: *anyopaque) void {
-        const slot: *const fn (*Registry, *anyopaque) callconv(.c) void =
-            @ptrFromInt(@intFromPtr(self.vptr[register_function_slot]));
+    /// `CreateArray`, slot 22 (0xB0).
+    const create_array_slot = 22;
+
+    pub fn bindNativeMethod(self: *VirtualMachine, function: *anyopaque) void {
+        const slot: *const fn (*VirtualMachine, *anyopaque) callconv(.c) void =
+            @ptrFromInt(@intFromPtr(self.vptr[bind_native_method_slot]));
         slot(self, function);
+    }
+
+    /// `CreateArray`: writes the `Array*` into `out` (a `BSTSmartPointer`, one
+    /// pointer, NOT a `VMValue`); the caller builds `{arrayOf(element), pointer}`.
+    /// Fresh count 2 (creator + VM tracking): `assign` the result, `reset` the
+    /// creator's. False only on allocation failure.
+    pub fn createArray(self: *VirtualMachine, element_type: *const value.TypeInfo, size: u32, out: *?*anyopaque) bool {
+        const slot: *const fn (*VirtualMachine, *const value.TypeInfo, u32, *?*anyopaque) callconv(.c) bool =
+            @ptrFromInt(@intFromPtr(self.vptr[create_array_slot]));
+        return slot(self, element_type, size, out);
     }
 };
 
 const GetOffsetFn = *const fn (*VMArgList, *VMState) callconv(.c) u32;
 const GetFn = *const fn (*VMArgList, *VMState, u32, u32) callconv(.c) ?*value.VMValue;
 
-/// `VMArgList::GetOffset` (RVA `0x0149E7F0`): where this frame's arguments
-/// begin. It has to be read once per call and passed to every `getArg`.
+/// `VMArgList::GetOffset` (RVA `0x0149E7F0`): read once per call, pass to every `getArg`.
 pub fn getOffset(state: *VMState) u32 {
     return game.fnAt(0x0149E7F0, GetOffsetFn)(state.arg_list, state);
 }
 
-/// `VMArgList::Get` (RVA `0x0149E860`): the cell for one argument. The frame
-/// holds no such argument when this returns null.
+/// `VMArgList::Get` (RVA `0x0149E860`): one argument's cell, null if absent.
 pub fn getArg(state: *VMState, index: u32, offset: u32) ?*value.VMValue {
     return game.fnAt(0x0149E860, GetFn)(state.arg_list, state, index, offset);
 }
@@ -55,7 +59,8 @@ test "a frame reaches its argument list through offset 0x00" {
     const std = @import("std");
     try std.testing.expectEqual(@as(usize, 0), @offsetOf(VMState, "arg_list"));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(*VMArgList));
-    try std.testing.expectEqual(@as(usize, 0), @offsetOf(Registry, "vptr"));
-    // The game's registration loop calls `RegisterFunction` at `call [rax+0xc0]`.
-    try std.testing.expectEqual(@as(usize, 0xc0), Registry.register_function_slot * 8);
+    try std.testing.expectEqual(@as(usize, 0), @offsetOf(VirtualMachine, "vptr"));
+    // The game's registration loop calls `BindNativeMethod` at `call [rax+0xc0]`.
+    try std.testing.expectEqual(@as(usize, 0xc0), VirtualMachine.bind_native_method_slot * 8);
+    try std.testing.expectEqual(@as(usize, 0xb0), VirtualMachine.create_array_slot * 8);
 }

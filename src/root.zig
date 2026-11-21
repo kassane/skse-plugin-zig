@@ -58,9 +58,8 @@ fn pathW(module: ?w.HMODULE, out: []u16) ?[:0]const u16 {
     return out[0..len :0];
 }
 
-/// Path of the DLL this code is compiled into, so the log lands next to it and
-/// MO2's VFS puts it in `overwrite/`. A static is used rather than
-/// `@returnAddress()`, which inlining would resolve to the caller's module.
+/// Path of this DLL, so the log lands beside it (MO2 redirects to overwrite/).
+/// A static, not `@returnAddress()`, which inlining resolves to the caller.
 fn modulePathW(out: []u16) ?[:0]const u16 {
     var module: w.HMODULE = undefined;
     const address: *const anyopaque = @ptrCast(&log_handle);

@@ -12,8 +12,7 @@ pub const std_options: std.Options = .{ .log_level = .info, .logFn = skse.logFn 
 const log = skse.log;
 const console = skse.console;
 
-/// A native's result goes to both sinks: the plugin log for history, the
-/// `~` console for the line to actually be seen.
+/// Log a result to the plugin log and the `~` console.
 fn emit(comptime fmt: []const u8, args: anytype) void {
     log(fmt, args);
     console.print(fmt, args);
@@ -23,8 +22,7 @@ const plugin_name: [:0]const u8 = "skse-plugin-zig-papyrus";
 const plugin_version_number: u32 = 0x01000000;
 const log_name_w = std.unicode.utf8ToUtf16LeStringLiteral("skse-plugin-zig-papyrus.log");
 
-// The class every native here is registered under, which is the `ScriptName`
-// the caller script declares.
+// The ScriptName the caller script declares.
 const script_name: [:0]const u8 = "ZigExampleCaller";
 
 var version_block = pa.versionData(.{
@@ -34,43 +32,74 @@ var version_block = pa.versionData(.{
     .compatible = &.{pa.RUNTIME_VERSION_1_7_104},
 });
 
-fn sum(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
+fn sum(args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void {
     _ = count;
+    _ = machine;
     const total = args[0].data.int + args[1].data.int;
     result.setInt(total);
     emit("Sum({d}, {d}) = {d}\n", .{ args[0].data.int, args[1].data.int, total });
 }
 
-// No parameters at all, which is the shape the game's parameter table ctor
-// leaves with a null table.
+// Zero parameters: the game's table ctor leaves a null table.
 var ticks: u32 = 0;
 
-fn tick(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
+fn tick(args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void {
     _ = args;
     _ = count;
+    _ = machine;
     ticks += 1;
     result.setInt(@bitCast(ticks));
     emit("Tick() = {d}\n", .{ticks});
 }
 
-fn scale(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
+fn scale(args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void {
     _ = count;
+    _ = machine;
     const scaled = args[0].data.float * args[1].data.float;
     result.setFloat(scaled);
     emit("Scale({d}, {d}) = {d}\n", .{ args[0].data.float, args[1].data.float, scaled });
 }
 
-fn isEven(args: [*]const value.VMValue, count: u32, result: *value.VMValue) callconv(.c) void {
+fn isEven(args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void {
     _ = count;
+    _ = machine;
     const even = @rem(args[0].data.int, 2) == 0;
     result.setBool(even);
     emit("IsEven({d}) = {s}\n", .{ args[0].data.int, if (even) "true" else "false" });
 }
 
-/// `bool RegisterFunctions(VMClassRegistry * registry)`, the callback SKSE calls
-/// once the VM is up.
+/// `Int[] Range(Int n)`: an int array filled 1..n. `CreateArray` writes only
+/// the `Array*`, so the cell is built here as `{int_array, pointer}`; `assign`
+/// the result, `reset` the creator's reference.
+fn range(args: [*]const value.VMValue, count: u32, machine: *vm.VirtualMachine, result: *value.VMValue) callconv(.c) void {
+    _ = count;
+    const length = args[0].data.int;
+    const size: u32 = if (length < 0) 0 else @intCast(length);
+
+    var array_ptr: ?*anyopaque = null;
+    const element_type = value.TypeInfo{ .raw = @backingInt(value.Type.int) };
+    if (!machine.createArray(&element_type, size, &array_ptr) or array_ptr == null) {
+        result.setNone();
+        emit("Range({d}) = none\n", .{length});
+        return;
+    }
+
+    const array: *value.Array = @ptrCast(@alignCast(array_ptr.?));
+    var total: i32 = 0;
+    const elements = array.elements();
+    for (0..array.size) |i| {
+        elements[i].setInt(@intCast(i + 1));
+        total += elements[i].data.int;
+    }
+    var cell: value.VMValue = .{ .type = value.arrayOf(.int), .data = .{ .pointer = array_ptr } };
+    value.assign(result, &cell);
+    value.reset(&cell);
+    emit("Range({d}) = {d} elements, sum {d}\n", .{ length, array.size, total });
+}
+
+/// SKSE's `RegisterFunctions` callback; the pointer it hands over is the VM.
 fn registerNatives(registry: *anyopaque) callconv(.c) bool {
-    const reg: *vm.Registry = @ptrCast(@alignCast(registry));
+    const machine: *vm.VirtualMachine = @ptrCast(@alignCast(registry));
 
     const natives = [_]struct { signature: papyrus.Signature, callback: papyrus.Callback }{
         .{
@@ -89,10 +118,14 @@ fn registerNatives(registry: *anyopaque) callconv(.c) bool {
             .signature = .{ .class = script_name, .name = "IsEven", .params = &.{.int}, .ret = .boolean },
             .callback = &isEven,
         },
+        .{
+            .signature = .{ .class = script_name, .name = "Range", .params = &.{.int}, .ret = value.arrayOf(.int) },
+            .callback = &range,
+        },
     };
 
     for (natives) |native| {
-        if (papyrus.register(reg, native.signature, native.callback)) {
+        if (papyrus.register(machine, native.signature, native.callback)) {
             log("registered {s}.{s}\n", .{ script_name, native.signature.name });
         } else |err| {
             log("register {s}: {s}\n", .{ native.signature.name, @errorName(err) });
@@ -102,8 +135,7 @@ fn registerNatives(registry: *anyopaque) callconv(.c) bool {
     return true;
 }
 
-/// `bool SKSEPlugin_Query(const SKSEInterface*, PluginInfo*)`, required by
-/// SKSE 2.0.20 and ignored by everything newer.
+/// `SKSEPlugin_Query`: required by SKSE 2.0.20, ignored by newer.
 fn onQuery(skse_intfc: *const pa.SKSEInterface, info: *pa.PluginInfo) callconv(.c) bool {
     _ = skse_intfc;
     info.infoVersion = pa.PluginInfo.kInfoVersion;
@@ -112,13 +144,22 @@ fn onQuery(skse_intfc: *const pa.SKSEInterface, info: *pa.PluginInfo) callconv(.
     return true;
 }
 
+/// Preload runs before Load (SKSE 2.2.7+); record it so the log proves ordering.
+var preloaded = false;
+
+fn onPreload(skse_intfc: *const pa.SKSEInterface) callconv(.c) bool {
+    _ = skse_intfc;
+    preloaded = true;
+    return true;
+}
+
 fn onLoad(skse_intfc: *const pa.SKSEInterface) callconv(.c) bool {
     const query_interface = skse_intfc.QueryInterface orelse return false;
 
     skse.openLog(log_name_w);
+    log("preload ran before load: {s}\n", .{if (preloaded) "yes" else "no"});
 
-    // The offsets the native path reaches are the 1.7.104 image's, and the
-    // Creation Kit is a different image with different ones.
+    // The RVAs are the 1.7.104 image's; the Creation Kit is a different image.
     if (skse_intfc.isEditor != 0) {
         log("skipping: editor runtime\n", .{});
         return true;
@@ -147,5 +188,6 @@ fn onLoad(skse_intfc: *const pa.SKSEInterface) callconv(.c) bool {
 comptime {
     @export(&version_block, .{ .name = "SKSEPlugin_Version" });
     @export(&onQuery, .{ .name = "SKSEPlugin_Query" });
+    @export(&onPreload, .{ .name = "SKSEPlugin_Preload" });
     @export(&onLoad, .{ .name = "SKSEPlugin_Load" });
 }

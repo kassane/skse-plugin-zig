@@ -1,9 +1,5 @@
-//! The game's in-game console.
-//!
-//! CommonLib's `RE::ConsoleLog` pairs the file logger with this: `Print` is a
-//! variadic member that builds a `va_list` and hands it to `VPrint`, so one
-//! call puts a finished line on the `~` screen. Both addresses below are the
-//! 1.7.104 image's, as address-library ids of the AE pair in
+//! The game's `~` console via `RE::ConsoleLog`. `Print` is variadic and hands
+//! a `va_list` to `VPrint`. Addresses are the 1.7.104 AE half of
 //! `RELOCATION_ID(se, ae)`.
 
 const std = @import("std");
@@ -18,24 +14,20 @@ const print_rva = 0x0090F1B0;
 
 const PrintFn = *const fn (*anyopaque, [*:0]const u8, ...) callconv(.c) void;
 
-/// Whether `val` was known at compile time, which decides whether the line
-/// gets baked into the binary or formatted per call.
+/// Whether `val` is comptime: bake the line, or format per call.
 inline fn isComptime(val: anytype) bool {
     return @typeInfo(@TypeOf(.{val})).@"struct".field_attrs[0].@"comptime";
 }
 
-/// Write one formatted line to the console. Nothing happens when the
-/// singleton is absent; the guard also keeps a host test build from
-/// reaching kernel32.
+/// Write one line to the console; no-op if the singleton is absent (also keeps
+/// host test builds off kernel32).
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     if (builtin.os.tag != .windows) return;
 
     const holder: *?*anyopaque = @ptrFromInt(game.base() + singleton_rva);
     const console = holder.* orelse return;
 
-    // A trailing newline would only add a blank row on screen, so it is
-    // dropped from the format itself: the trimmed format keeps its own
-    // sentinel directly after the text.
+    // Drop a trailing newline (it would add a blank row); keep the sentinel.
     const line_fmt = comptime std.mem.trimEnd(u8, fmt, "\n");
 
     if (isComptime(args)) {
