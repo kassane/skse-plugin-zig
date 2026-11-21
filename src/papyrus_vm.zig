@@ -30,9 +30,9 @@ pub const Registry = extern struct {
     const register_function_slot = 24;
 
     pub fn registerFunction(self: *Registry, function: *anyopaque) void {
-        const call: *const fn (*Registry, *anyopaque) callconv(.c) void =
+        const slot: *const fn (*Registry, *anyopaque) callconv(.c) void =
             @ptrFromInt(@intFromPtr(self.vptr[register_function_slot]));
-        call(self, function);
+        slot(self, function);
     }
 };
 
@@ -42,13 +42,13 @@ const GetFn = *const fn (*VMArgList, *VMState, u32, u32) callconv(.c) ?*value.VM
 /// `VMArgList::GetOffset` (RVA `0x0149E7F0`): where this frame's arguments
 /// begin. It has to be read once per call and passed to every `getArg`.
 pub fn getOffset(state: *VMState) u32 {
-    return game.fnAt(0x0149E7F0, GetOffsetFn).*(state.arg_list, state);
+    return game.fnAt(0x0149E7F0, GetOffsetFn)(state.arg_list, state);
 }
 
 /// `VMArgList::Get` (RVA `0x0149E860`): the cell for one argument. The frame
 /// holds no such argument when this returns null.
 pub fn getArg(state: *VMState, index: u32, offset: u32) ?*value.VMValue {
-    return game.fnAt(0x0149E860, GetFn).*(state.arg_list, state, index, offset);
+    return game.fnAt(0x0149E860, GetFn)(state.arg_list, state, index, offset);
 }
 
 test "a frame reaches its argument list through offset 0x00" {

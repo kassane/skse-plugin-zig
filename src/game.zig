@@ -16,7 +16,9 @@ pub fn base() usize {
 }
 
 /// A game function as a callable address. `F` names the shape, so the call
-/// site reads as the header's declaration:
+/// site reads as the header's declaration. Call the returned pointer directly;
+/// loading it with `.*` is rejected in Zig 0.18, where `fn` values are
+/// comptime-only.
 ///
 ///     game.fnAt(0x0149E7F0, *const fn (*VMArgList, *VMState) callconv(.c) u32)
 pub fn fnAt(comptime rva: usize, comptime F: type) F {
